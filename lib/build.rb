@@ -5,6 +5,7 @@ require 'childprocess'
 require 'tempfile'
 require 'fileutils'
 require 'bundler'
+require 'shellwords'
 
 module GitlabCi
   class Build
@@ -13,6 +14,7 @@ module GitlabCi
     attr_accessor :id, :commands, :ref, :tmp_file_path, :output, :before_sha
 
     def initialize(data)
+      @output = ""
       @commands = data[:commands].to_a
       @ref = data[:ref]
       @ref_name = data[:ref_name]
@@ -43,6 +45,7 @@ module GitlabCi
       @run_file.puts %|trap 'kill -s INT 0' EXIT|
 
       @commands.each do |command|
+        @run_file.puts %|echo #{command.shellescape}|
         @run_file.puts(command)
       end
       @run_file.close
@@ -89,15 +92,18 @@ module GitlabCi
       tmp_file_output ||= ''
     end
 
+    def cleanup
+      @tmp_file.rewind
+      @output << GitlabCi::Encode.encode!(@tmp_file.read)
+      @tmp_file.close
+      @tmp_file.unlink
+      @run_file.unlink
+    end
+
     private
 
     def execute(cmd)
       cmd = cmd.strip
-
-      @output ||= ""
-      @output << "\n"
-      @output << cmd
-      @output << "\n"
 
       @process = ChildProcess.build('bash', '--login', '-c', cmd)
       @tmp_file = Tempfile.new("child-output", binmode: true)
@@ -123,14 +129,6 @@ module GitlabCi
       @tmp_file_path = @tmp_file.path
     rescue => e
       @output << e.message
-    end
-
-    def cleanup
-      @tmp_file.rewind
-      @output << GitlabCi::Encode.encode!(@tmp_file.read)
-      @tmp_file.close
-      @tmp_file.unlink
-      @run_file.unlink
     end
 
     def checkout_cmd
