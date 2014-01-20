@@ -6,6 +6,9 @@ module GitlabCi
     attr_accessor :current_build, :thread
 
     def initialize
+      $stdout.sync = true
+      $stderr.sync = true
+
       puts '* Gitlab CI Runner started'
       puts '* Waiting for builds'
       loop do
