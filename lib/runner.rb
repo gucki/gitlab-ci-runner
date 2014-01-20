@@ -10,7 +10,6 @@ module GitlabCi
       puts '* Waiting for builds'
       loop do
         if running?
-          push_build
           update_build
         else
           get_build
@@ -22,25 +21,7 @@ module GitlabCi
     private
 
     def running?
-      @current_build
-    end
-
-    def update_build
-      return unless @current_build.completed?
-      puts "#{Time.now.to_s} | Completed build #{@current_build.id}, #{@current_build.state}."
-      @current_build.cleanup
-      @current_build = nil
-    end
-
-    def push_build
-      case network.update_build(@current_build.id, @current_build.state, @current_build.trace)
-      when :success
-        # nothing to do here
-      when :aborted
-        @current_build.abort
-      when :failure
-        # nothing to do here, we simply assume this is a temporary failure communicating with the gitlab-ci server
-      end
+      current_build
     end
 
     def get_build
@@ -52,19 +33,34 @@ module GitlabCi
       end
     end
 
+    def update_build
+      state = current_build.state
+      puts "#{Time.now.to_s} | Build #{current_build.id}, state #{state}."
+
+      if network.update_build(current_build.id, state, current_build.trace) == :aborted
+        puts "#{Time.now.to_s} | Build #{current_build.id} was aborted by the user."
+        current_build.abort
+      end
+
+      unless state == :running
+        puts "#{Time.now.to_s} | Build #{current_build.id} completed."
+        current_build.cleanup
+        self.current_build = nil
+      end
+    end
+
     def network
       @network ||= Network.new
     end
 
     def run(build_data)
-      @current_build = GitlabCi::Build.new(build_data)
-      puts "#{Time.now.to_s} | Starting new build #{@current_build.id}..."
-      @current_build.run
-      puts "#{Time.now.to_s} | Build #{@current_build.id} started."
+      current_build = GitlabCi::Build.new(build_data)
+      puts "#{Time.now.to_s} | Starting new build #{current_build.id}..."
+      current_build.run
     end
 
     def collect_trace
-      @current_build.trace
+      current_build.trace
     end
   end
 end
