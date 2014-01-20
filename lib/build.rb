@@ -11,10 +11,9 @@ module GitlabCi
   class Build
     TIMEOUT = 7200
 
-    attr_accessor :id, :commands, :ref, :tmp_file_path, :output, :before_sha
+    attr_accessor :id, :commands, :ref, :before_sha
 
     def initialize(data)
-      @output = ""
       @commands = data[:commands].to_a
       @ref = data[:ref]
       @ref_name = data[:ref_name]
@@ -27,8 +26,8 @@ module GitlabCi
     end
 
     def run
-      @run_file = Tempfile.new("executor")
-      @run_file.chmod(0755)
+      @executor_file = Tempfile.new("executor")
+      @executor_file.chmod(0755)
 
       @commands.unshift(checkout_cmd)
 
@@ -40,17 +39,17 @@ module GitlabCi
         @commands.unshift(clone_cmd)
       end
 
-      @run_file.puts %|#!/bin/bash|
-      @run_file.puts %|set -e|
-      @run_file.puts %|trap 'kill -s INT 0' EXIT|
+      @executor_file.puts %|#!/bin/bash|
+      @executor_file.puts %|set -e|
+      @executor_file.puts %|trap 'kill -s INT 0' EXIT|
 
       @commands.each do |command|
-        @run_file.puts %|echo #{command.shellescape}|
-        @run_file.puts(command)
+        @executor_file.puts %|echo #{command.shellescape}|
+        @executor_file.puts(command)
       end
-      @run_file.close
+      @executor_file.close
 
-      Bundler.with_clean_env { execute("setsid #{@run_file.path}") }
+      Bundler.with_clean_env { execute("setsid #{@executor_file.path}") }
     end
 
     def state
@@ -81,23 +80,14 @@ module GitlabCi
       @process.stop
     end
 
-    def trace
-      output + tmp_file_output
-    rescue
-      ''
-    end
-
-    def tmp_file_output
-      tmp_file_output = GitlabCi::Encode.encode!(File.binread(tmp_file_path)) if tmp_file_path && File.readable?(tmp_file_path)
-      tmp_file_output ||= ''
+    def output
+      GitlabCi::Encode.encode!(File.binread(@output_file.path))
     end
 
     def cleanup
-      @tmp_file.rewind
-      @output << GitlabCi::Encode.encode!(@tmp_file.read)
-      @tmp_file.close
-      @tmp_file.unlink
-      @run_file.unlink
+      @output_file.close
+      @output_file.unlink
+      @executor_file.unlink
     end
 
     private
@@ -105,14 +95,13 @@ module GitlabCi
     def execute(cmd)
       cmd = cmd.strip
 
-      @process = ChildProcess.build('bash', '--login', '-c', cmd)
-      @tmp_file = Tempfile.new("child-output", binmode: true)
-      @process.io.stdout = @tmp_file
-      @process.io.stderr = @tmp_file
-      @process.cwd = project_dir
+      @output_file = Tempfile.new("child-output", binmode: true)
+      @output_file.sync = true
 
-      # ENV
-      # Bundler.with_clean_env now handles PATH, GEM_HOME, RUBYOPT & BUNDLE_*.
+      @process = ChildProcess.build('bash', '--login', '-c', cmd)
+      @process.io.stdout = @output_file
+      @process.io.stderr = @output_file
+      @process.cwd = project_dir
 
       @process.environment['CI_SERVER'] = 'yes'
       @process.environment['CI_SERVER_NAME'] = 'GitLab CI'
@@ -125,10 +114,6 @@ module GitlabCi
       @process.environment['CI_BUILD_ID'] = @id
 
       @process.start
-
-      @tmp_file_path = @tmp_file.path
-    rescue => e
-      @output << e.message
     end
 
     def checkout_cmd

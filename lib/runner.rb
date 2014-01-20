@@ -11,6 +11,7 @@ module GitlabCi
 
       puts '* Gitlab CI Runner started'
       puts '* Waiting for builds'
+
       loop do
         if running?
           update_build
@@ -40,7 +41,7 @@ module GitlabCi
       state = current_build.state
       puts "#{Time.now.to_s} | Build #{current_build.id}, state #{state}."
 
-      if network.update_build(current_build.id, state, current_build.trace) == :aborted
+      if network.update_build(current_build.id, state.to_s, current_build.output) == :aborted
         puts "#{Time.now.to_s} | Build #{current_build.id} was aborted by the user."
         current_build.abort
       end
@@ -60,10 +61,6 @@ module GitlabCi
       self.current_build = GitlabCi::Build.new(build_data)
       puts "#{Time.now.to_s} | Starting new build #{current_build.id}..."
       current_build.run
-    end
-
-    def collect_trace
-      current_build.trace
     end
   end
 end
