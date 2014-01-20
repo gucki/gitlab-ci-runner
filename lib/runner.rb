@@ -57,7 +57,7 @@ module GitlabCi
     end
 
     def run(build_data)
-      current_build = GitlabCi::Build.new(build_data)
+      self.current_build = GitlabCi::Build.new(build_data)
       puts "#{Time.now.to_s} | Starting new build #{current_build.id}..."
       current_build.run
     end
