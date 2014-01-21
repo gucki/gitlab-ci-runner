@@ -86,7 +86,6 @@ module GitlabCi
 
     def cleanup
       @output_file.close
-      @output_file.unlink
       @executor_file.unlink
     end
 
@@ -95,7 +94,8 @@ module GitlabCi
     def execute(cmd)
       cmd = cmd.strip
 
-      @output_file = Tempfile.new("child-output", binmode: true)
+      FileUtils.mkdir_p(config.logs_dir)
+      @output_file = File.new(File.join(config.logs_dir, "build-#{id}"), "w", :binmode => true)
       @output_file.sync = true
 
       @process = ChildProcess.build('bash', '--login', '-c', cmd)
